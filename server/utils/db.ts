@@ -1,6 +1,8 @@
 import { initializeApp, getApps, cert, applicationDefault } from 'firebase-admin/app'
 import { getFirestore, FieldValue, type Firestore, type DocumentSnapshot } from 'firebase-admin/firestore'
 import { getStorage } from 'firebase-admin/storage'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 // Penyimpanan: Firestore (data) + Firebase Storage (upload gambar).
 // Kredensial dibaca dari environment (lihat .env.example).
@@ -8,12 +10,18 @@ import { getStorage } from 'firebase-admin/storage'
 let db: Firestore | null = null
 let ready: Promise<Firestore> | null = null
 
-function credential() {
+/** Service account dari FIREBASE_SERVICE_ACCOUNT (JSON/base64) atau FIREBASE_SERVICE_ACCOUNT_FILE (path file). */
+function serviceAccount(): any | null {
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT?.trim()
-  if (raw) {
-    const json = raw.startsWith('{') ? raw : Buffer.from(raw, 'base64').toString('utf8')
-    return cert(JSON.parse(json))
-  }
+  if (raw) return JSON.parse(raw.startsWith('{') ? raw : Buffer.from(raw, 'base64').toString('utf8'))
+  const file = process.env.FIREBASE_SERVICE_ACCOUNT_FILE?.trim()
+  if (file) return JSON.parse(readFileSync(resolve(process.cwd(), file), 'utf8'))
+  return null
+}
+
+function credential() {
+  const account = serviceAccount()
+  if (account) return cert(account)
   const { FIREBASE_PROJECT_ID: projectId, FIREBASE_CLIENT_EMAIL: clientEmail, FIREBASE_PRIVATE_KEY: key } = process.env
   if (projectId && clientEmail && key) return cert({ projectId, clientEmail, privateKey: key.replace(/\\n/g, '\n') })
   return applicationDefault()
@@ -21,11 +29,7 @@ function credential() {
 
 function projectId() {
   if (process.env.FIREBASE_PROJECT_ID) return process.env.FIREBASE_PROJECT_ID
-  const raw = process.env.FIREBASE_SERVICE_ACCOUNT?.trim()
-  if (raw) {
-    try { return JSON.parse(raw.startsWith('{') ? raw : Buffer.from(raw, 'base64').toString('utf8')).project_id } catch { /* abaikan */ }
-  }
-  return process.env.GCLOUD_PROJECT
+  return serviceAccount()?.project_id || process.env.GCLOUD_PROJECT
 }
 
 function firebaseApp() {

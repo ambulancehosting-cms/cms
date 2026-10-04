@@ -5,3 +5,5 @@ node_modules
 data
 .env
 *.log
+serviceAc*Firebase*.json
+*firebase-adminsdk*.json

@@ -1,5 +1,3 @@
-import { writeFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 
 const EXT: Record<string, string> = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif' }
@@ -13,7 +11,7 @@ function sniff(b: Buffer): string | null {
 }
 
 export default defineEventHandler(async (event) => {
-  requireUser(event, 'media')
+  await requireUser(event, 'media')
   const parts = await readMultipartFormData(event)
   const file = parts?.find(p => p.name === 'file' && p.filename)
   if (!file) throw createError({ statusCode: 400, statusMessage: 'Tidak ada file yang diunggah.' })
@@ -21,8 +19,9 @@ export default defineEventHandler(async (event) => {
   const mime = sniff(file.data)
   if (!mime) throw createError({ statusCode: 400, statusMessage: 'Format harus JPG, PNG, WebP, atau GIF.' })
   const filename = `${Date.now().toString(36)}-${randomBytes(4).toString('hex')}${EXT[mime]}`
-  writeFileSync(join(uploadDir(), filename), file.data)
-  const r = getDb().prepare('INSERT INTO media (filename, original, mime, size) VALUES (?,?,?,?)')
-    .run(filename, String(file.filename).slice(0, 200), mime, file.data.length)
-  return { id: r.lastInsertRowid, url: `/uploads/${filename}`, filename }
+  await bucket().file(`uploads/${filename}`).save(file.data, { contentType: mime, resumable: false })
+  const ref = await (await getDb()).collection('media').add({
+    filename, original: String(file.filename).slice(0, 200), mime, size: file.data.length, created_at: nowIso(),
+  })
+  return { id: ref.id, url: `/uploads/${filename}`, filename }
 })
